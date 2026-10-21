@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Queue</title>
+  <link rel="stylesheet" href="./CodexQueue.css">
+  <style>
+    html, body { height: 100%; margin: 0; background: #222; }
+  </style>
+</head>
+<body>
+  <div class="cq-root" data-cq-root data-cq-page>
+    <div class="cq-stage">
+      <div class="cq-stack">
+        <div class="cq-rail _rail_1hrlq_1 _attached_1hrlq_36" data-cq-rail data-composer-rail data-composer-rail-placement="above">
+          <div class="cq-item _item_1hrlq_8 bg-surface-elevated-secondary" data-composer-rail-item="present" data-composer-rail-framed data-composer-rail-placement="above">
+            <div class="cq-list vertical-scroll-fade-mask hide-scrollbar scrollbar-none" data-cq-list></div>
+          </div>
+        </div>
+        <div class="cq-composer" data-composer-utility-bar-variant="default" data-composer-layout="multiline" data-composer-radius-variant="default">
+          <div class="cq-body">
+            <div class="cq-attach" data-cq-attach hidden></div>
+            <div class="cq-footer" data-composer-layout="multiline" data-composer-rows="stacked" data-composer-spacing="default" aria-label="Composer utility bar">
+            <div class="cq-input-slot" data-composer-input-layout="multiline">
+              <textarea class="cq-input" data-cq-input data-codex-composer="true" data-composer-markdown data-enter-behavior="enter" rows="1" dir="auto" spellcheck="true" translate="no" aria-multiline="true" aria-label="和 Codex 一起工作" placeholder="和 Codex 一起工作"></textarea>
+              <span class="cq-input-ph" data-cq-input-ph aria-hidden="true">和 Codex 一起工作</span>
+              <button type="button" class="cq-btn cq-icon-btn cq-expand" data-cq-expand data-cq-tip-kind="expand" data-composer-expand-toggle hidden aria-label="Expand" aria-pressed="false"></button>
+            </div>
+            <div class="cq-footer-start">
+            <button type="button" class="cq-btn cq-icon-btn" data-cq-add data-cq-tip-kind="add" aria-label="添加文件等内容" aria-haspopup="menu" aria-expanded="false">
+              <svg class="cq-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8.00049 1.9165C8.41448 1.91677 8.75049 2.25245 8.75049 2.6665V7.25049H13.3335C13.7476 7.25066 14.0835 7.58638 14.0835 8.00049C14.0832 8.41437 13.7474 8.75031 13.3335 8.75049H8.75049V13.3335C8.75031 13.7474 8.41437 14.0832 8.00049 14.0835C7.58638 14.0835 7.25066 13.7476 7.25049 13.3335V8.75049H2.6665C2.25245 8.75049 1.91677 8.41448 1.9165 8.00049C1.9165 7.58627 2.25229 7.25049 2.6665 7.25049H7.25049V2.6665C7.25049 2.25229 7.58627 1.9165 8.00049 1.9165Z"/></svg>
+            </button>
+            <button type="button" class="cq-chip cq-icon-btn cq-access" data-cq-access data-cq-tip-kind="access" aria-label="更改权限" aria-haspopup="menu" aria-expanded="false">
+              <svg class="cq-icon cq-access-ico" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M9.06543 1.95123C9.66107 1.69076 10.3389 1.69071 10.9346 1.95123L15.9346 4.13873C16.7832 4.51008 17.3311 5.34917 17.3311 6.27545V10.5528C17.3309 14.6017 14.0489 17.8847 10 17.8848C5.95108 17.8846 2.66813 14.6017 2.66797 10.5528V6.27545C2.66797 5.34924 3.21695 4.51012 4.06543 4.13873L9.06543 1.95123ZM10.4014 3.16998C10.1456 3.05814 9.85444 3.05819 9.59863 3.16998L4.59863 5.35748C4.23427 5.51708 3.99805 5.87764 3.99805 6.27545V10.5528C3.99821 13.8671 6.68563 16.5546 10 16.5547C13.3144 16.5546 16.0008 13.8671 16.001 10.5528V6.27545C16.001 5.87756 15.7658 5.51703 15.4014 5.35748L10.4014 3.16998Z"/><path fill="currentColor" d="M10.8883 13.1116C10.8883 13.6025 10.4903 14.0005 9.99936 14.0005C9.50844 14.0005 9.11047 13.6025 9.11047 13.1116C9.11047 12.6207 9.50844 12.2227 9.99936 12.2227C10.4903 12.6207 10.8883 12.6207 10.8883 13.1116Z"/><path fill="currentColor" d="M10.5169 10.8949L11.1135 7.31519C11.2283 6.62672 10.6974 6 9.99941 6C9.30145 6 8.77053 6.62672 8.88528 7.31519L9.4819 10.8949C9.52406 11.1479 9.74294 11.3333 9.99941 11.3333C10.2559 11.3333 10.4748 11.1479 10.5169 10.8949Z"/></svg>
+              <span class="cq-sr" data-cq-access-label>完全访问</span>
+            </button>
+            <button type="button" class="cq-btn cq-icon-btn" data-cq-pin data-cq-tip-kind="pin" aria-label="审查钩子" aria-haspopup="menu" aria-expanded="false">
+              <svg class="cq-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M10 1.98926C11.748 1.98926 13.165 3.40632 13.165 5.1543C13.165 6.67406 12.0936 7.94243 10.665 8.24805V13.792C10.665 15.2621 11.8541 16.4559 13.3242 16.4609C14.8014 16.466 16.002 15.2692 16.002 13.792V12.457L14.7666 13.3564C14.4696 13.5724 14.053 13.5068 13.8369 13.21C13.6211 12.913 13.6866 12.4963 13.9834 12.2803L15.9102 10.8789C16.5014 10.4491 17.3315 10.8717 17.332 11.6025V13.792C17.332 16.0055 15.5329 17.7986 13.3193 17.791C11.9296 17.7862 10.7079 17.0725 9.99512 15.9932C9.27848 17.0684 8.05588 17.7772 6.66699 17.7773C4.45877 17.7773 2.66797 15.9865 2.66797 13.7783V11.6025C2.66819 10.9173 3.39736 10.5034 3.97559 10.8086L4.08887 10.8789L6.0166 12.2803C6.31341 12.4963 6.37889 12.913 6.16309 13.21C5.94703 13.5068 5.53036 13.5724 5.2334 13.3564L3.99805 12.457V13.7783C3.99805 15.252 5.19331 16.4473 6.66699 16.4473C8.14052 16.4471 9.33496 15.2519 9.33496 13.7783V8.24805C7.90642 7.94243 6.83496 6.67406 6.83496 5.1543C6.83496 3.40632 8.25202 1.98926 10 1.98926ZM10 3.31934C8.98656 3.31934 8.16504 4.14085 8.16504 5.1543C8.16504 6.16774 8.98656 6.98926 10 6.98926C11.0134 6.98926 11.835 6.16774 11.835 5.1543C11.835 4.14085 11.0134 3.31934 10 3.31934Z"/></svg>
+            </button>
+            </div>
+            <div class="cq-footer-end">
+            <button type="button" class="cq-model" data-cq-model data-cq-tip-kind="model" aria-label="选择 ChatGPT 模型" aria-haspopup="menu" aria-expanded="false">
+              <span class="cq-model-face cq-model-closed">
+                <svg class="cq-model-bolt" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M11.9125 21.4125C11.5292 21.8625 11.0292 22.0958 10.4125 22.1125C9.79586 22.1291 9.29586 21.9208 8.91252 21.4875C8.53752 21.0541 8.45836 20.4541 8.67503 19.6875L9.68752 16H4.57502C4.00836 16 3.56669 15.8375 3.25002 15.5125C2.93336 15.1791 2.77502 14.7791 2.77502 14.3125C2.77502 13.8375 2.92919 13.4125 3.23752 13.0375L12.1375 2.47497C12.5209 2.02497 13.0209 1.79164 13.6375 1.77497C14.2542 1.75831 14.75 1.96664 15.125 2.39997C15.5084 2.83331 15.5917 3.43331 15.375 4.19997L14.3125 7.99998H19.425C19.9917 7.99998 20.4334 8.16664 20.75 8.49997C21.075 8.83331 21.2375 9.23748 21.2375 9.71247C21.2375 10.1791 21.0792 10.5958 20.7625 10.9625L11.9125 21.4125Z"/></svg>
+                <span class="cq-model-name" data-cq-model-name>GPT-6.1 Sol</span>
+                <span class="cq-model-effort" data-cq-model-label data-effort="high"></span>
+                <svg class="cq-caret" viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M2.6 4.2a.7.7 0 0 1 1 0L6 6.6l2.4-2.4a.7.7 0 1 1 1 1L6.5 8.1a.7.7 0 0 1-1 0L2.6 5.2a.7.7 0 0 1 0-1Z"/></svg>
+              </span>
+              <span class="cq-model-face cq-model-open">
+                <span>选择推理强度</span>
+                <svg class="cq-caret" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M10.2954 6.54537C10.5003 6.3404 10.8325 6.34051 11.0376 6.54537C11.2426 6.7504 11.2426 7.08253 11.0376 7.28756L8.60689 9.71822C8.27169 10.0534 7.72823 10.0534 7.39303 9.71822L4.96236 7.28756C4.75734 7.08253 4.75734 6.7504 4.96236 6.54537C5.16739 6.34035 5.49952 6.34035 5.70455 6.54537L7.99947 8.84029L10.2954 6.54537Z"/></svg>
+              </span>
+            </button>
+            <button type="button" class="cq-btn cq-icon-btn" data-cq-dictate data-cq-tip-kind="dictate" aria-label="听写" aria-pressed="false">
+              <svg class="cq-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12.4584 8.96973C12.5671 8.70121 12.8734 8.57227 13.142 8.68066C13.4107 8.78946 13.5408 9.09549 13.432 9.36426C12.6258 11.3552 10.7559 12.8025 8.52577 13.001V14.583C8.52577 14.8729 8.29021 15.1083 8.00038 15.1084C7.71043 15.1084 7.47499 14.873 7.47499 14.583V13.001C5.2445 12.8028 3.374 11.3555 2.56776 9.36426C2.45908 9.09577 2.58862 8.78975 2.85682 8.68066C3.12547 8.57192 3.4315 8.7012 3.54041 8.96973C4.25323 10.7306 5.97877 11.9715 7.99256 11.9746H8.00624C10.0204 11.972 11.7453 10.7308 12.4584 8.96973Z"/><path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" d="M8.00038 0.974609C9.76293 0.974785 11.1918 2.40439 11.1918 4.16699V7.15625C11.1915 8.91863 9.76277 10.3475 8.00038 10.3477C6.23772 10.3476 4.80799 8.91794 4.80799 7.15527V4.16699C4.80799 2.40432 6.23772 0.974675 8.00038 0.974609ZM8.00038 2.02539C6.81762 2.02546 5.85877 2.98422 5.85877 4.16699V7.15527C5.85877 8.33804 6.81762 9.29779 8.00038 9.29785C9.18287 9.29768 10.1417 8.33873 10.142 7.15625V4.16699C10.142 2.98429 9.18304 2.02557 8.00038 2.02539Z"/></svg>
+            </button>
+            <button type="button" class="cq-send" data-cq-send data-cq-tip-kind="send" aria-label="发送"></button>
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cq-menu cq-pop hide-scrollbar scrollbar-none" data-cq-pop hidden role="menu"></div>
+    <div class="cq-menu" data-cq-menu hidden role="menu">
+      <button type="button" data-cq-edit role="menuitem"><svg class="cq-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M4.5 13.7 13.2 5a1.3 1.3 0 0 1 1.84 0l.46.46a1.3 1.3 0 0 1 0 1.84L6.8 16.5H4.5v-2.8Zm9.36-7.86-1.2-1.2-7.66 7.66v1.2h1.2l7.66-7.66Z"/></svg><span>Edit message</span></button>
+      <button type="button" data-cq-side role="menuitem"><svg class="cq-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M4.5 4.5h11A1.5 1.5 0 0 1 17 6v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14V6A1.5 1.5 0 0 1 4.5 4.5Zm7.25 1.5v8H15.5V6h-3.75Z"/></svg><span>Open in side chat</span></button>
+      <button type="button" data-cq-queueing role="menuitem"><svg class="cq-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M5 6.25a.75.75 0 0 1 .75-.75h8.5a.75.75 0 0 1 0 1.5h-8.5A.75.75 0 0 1 5 6.25Zm0 3.75a.75.75 0 0 1 .75-.75h8.5a.75.75 0 0 1 0 1.5h-8.5A.75.75 0 0 1 5 10Zm.75 3a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Z"/></svg><span>Turn off queueing</span></button>
+    </div>
+    <div class="cq-tip" data-cq-tip hidden></div>
+    <div class="cq-toast" data-cq-toast hidden></div>
+    <div class="cq-dialog" data-cq-dialog hidden>
+      <div class="cq-dialog-card" role="dialog" aria-modal="true" aria-labelledby="cq-dialog-title">
+        <h2 id="cq-dialog-title">Send message?</h2>
+        <p data-cq-dialog-copy></p>
+        <div class="cq-dialog-actions">
+          <button type="button" class="cq-dialog-clear" data-cq-dialog-clear>Clear queue</button>
+          <button type="button" class="cq-dialog-send" data-cq-dialog-send>Send message</button>
+        </div>
+      </div>
+    </div>
+    <div class="cq-log" data-cq-log><b>Queue actions</b></div>
+  </div>
+  <script src="./CodexQueue.runtime.js"></script>
+</body>
+</html>
