@@ -475,7 +475,10 @@ function mountCodexQueue(root) {
         hidePop();
         return;
       }
-      if (kind === "model") state.modelView = "effort";
+      if (kind === "model") {
+        state.modelView = "effort";
+        jumpSliderVisual();
+      }
       const html = renderPop(kind);
       if (!html) return;
       state.popKind = kind;
@@ -507,7 +510,10 @@ function mountCodexQueue(root) {
         "above",
         kind === "model" ? "anchor" : "composer"
       );
-      if (kind === "model") syncEffortStacks(true);
+      if (kind === "model") {
+        syncEffortStacks(true);
+        syncEffortFeel();
+      }
       pop.querySelector("button")?.focus();
     }
 
@@ -548,7 +554,367 @@ function mountCodexQueue(root) {
     }
 
     const EFFORT_MOTION_MS = 300;
+    const SLIDER_THUMB_PX = 28;
+    const SLIDER_EDGE_PX = 1;
+    const SLIDER_DRAG_MS = 150;
+    const SLIDER_REST_MS = 300;
     let sliderDrag = null;
+    let sliderRect = null;
+    let sliderPointerMoved = false;
+    let sliderThumbHover = false;
+    let sliderPercent = null;
+    let sliderFrom = 0;
+    let sliderTo = 0;
+    let sliderStart = 0;
+    let sliderDur = SLIDER_REST_MS;
+    let sliderPlaying = false;
+    let sliderScale = 1;
+    let sliderScaleV = 0;
+    let sliderFrame = 0;
+    let sliderLastTs = 0;
+    let effortWasMax = false;
+    let glowStop = null;
+    let glowCanvas = null;
+    let wanderTimer = 0;
+
+    function sliderEase(x) {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      const x1 = 0.23;
+      const y1 = 1;
+      const x2 = 0.32;
+      const y2 = 1;
+      const cx = (t) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
+      const cy = (t) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
+      const dx = (t) => 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
+      let t = x;
+      for (let i = 0; i < 8; i += 1) {
+        const err = cx(t) - x;
+        const slope = dx(t);
+        if (Math.abs(err) < 1e-5 || Math.abs(slope) < 1e-6) break;
+        t -= err / slope;
+      }
+      return cy(Math.min(1, Math.max(0, t)));
+    }
+
+    function sliderSteps() {
+      return Math.max(0, sliderEffortItems().length - 1);
+    }
+
+    function sliderTargetPercent() {
+      const steps = sliderSteps();
+      return (steps <= 0 ? 0 : sliderIndex() / steps) * 100;
+    }
+
+    function sliderThumbOffset(percent) {
+      const inset = SLIDER_THUMB_PX / 2 - SLIDER_EDGE_PX;
+      return inset - (percent / 50) * inset;
+    }
+
+    function sliderRangeShift(percent, steps) {
+      if (steps <= 0) return 0;
+      const step = 100 / steps;
+      const blend = Math.min(percent / step, (100 - percent) / step, 1);
+      return sliderThumbOffset(percent) * blend;
+    }
+
+    function sliderThumbLeft(percent) {
+      return `calc(${percent}% + ${sliderThumbOffset(percent)}px)`;
+    }
+
+    function sliderRangeTransform(percent, steps) {
+      if (steps <= 0) return "translateX(-100%)";
+      return `translateX(calc(${percent - 100}% + ${sliderRangeShift(percent, steps)}px))`;
+    }
+
+    function paintSlider() {
+      if (sliderPercent == null || !pop) return;
+      const steps = sliderSteps();
+      const thumb = pop.querySelector("[data-cq-effort-thumb]");
+      const range = pop.querySelector("[data-cq-effort-range]");
+      if (thumb) {
+        thumb.style.left = sliderThumbLeft(sliderPercent);
+        thumb.style.transform = `translate(-50%, -50%) scale(${sliderScale})`;
+      }
+      if (range) range.style.transform = sliderRangeTransform(sliderPercent, steps);
+    }
+
+    function sliderPressed() {
+      return sliderDrag != null || sliderThumbHover;
+    }
+
+    function sliderScaleSettled() {
+      const target = effortMotionReduced() || !sliderPressed() ? 1 : 32 / 28;
+      return Math.abs(sliderScale - target) < 0.0008 && Math.abs(sliderScaleV) < 0.001;
+    }
+
+    function stepSliderScale(dt) {
+      const pressed = sliderPressed();
+      const target = effortMotionReduced() || !pressed ? 1 : 32 / 28;
+      if (effortMotionReduced()) {
+        sliderScale = target;
+        sliderScaleV = 0;
+        return;
+      }
+      const cfg = pressed ? { k: 420, c: 38 } : { k: 220, c: 26 };
+      const count = Math.max(1, Math.ceil(dt / (1 / 120)));
+      const h = dt / count;
+      for (let i = 0; i < count; i += 1) {
+        const accel = -cfg.k * (sliderScale - target) - cfg.c * sliderScaleV;
+        sliderScaleV += accel * h;
+        sliderScale += sliderScaleV * h;
+      }
+    }
+
+    function sliderFrameStep(now) {
+      const dt = Math.min(0.05, sliderLastTs ? (now - sliderLastTs) / 1000 : 1 / 60);
+      sliderLastTs = now;
+      if (sliderPlaying) {
+        const u = Math.min(1, (now - sliderStart) / sliderDur);
+        sliderPercent = sliderFrom + (sliderTo - sliderFrom) * sliderEase(u);
+        if (u >= 1) {
+          sliderPercent = sliderTo;
+          sliderPlaying = false;
+        }
+      }
+      stepSliderScale(dt);
+      paintSlider();
+      if (sliderPlaying || !sliderScaleSettled()) sliderFrame = requestAnimationFrame(sliderFrameStep);
+      else {
+        sliderFrame = 0;
+        sliderLastTs = 0;
+      }
+    }
+
+    function kickSliderFrame() {
+      if (sliderFrame) return;
+      sliderLastTs = 0;
+      sliderFrame = requestAnimationFrame(sliderFrameStep);
+    }
+
+    function animateSliderTo(target, dragging) {
+      const dur = dragging ? SLIDER_DRAG_MS : SLIDER_REST_MS;
+      if (sliderPercent == null || effortMotionReduced()) {
+        sliderPercent = target;
+        sliderPlaying = false;
+        if (effortMotionReduced()) {
+          sliderScale = 1;
+          sliderScaleV = 0;
+        }
+        paintSlider();
+        if (!sliderScaleSettled()) kickSliderFrame();
+        return;
+      }
+      if (sliderPlaying && sliderTo === target && sliderDur === dur) return;
+      if (!sliderPlaying && Math.abs(sliderPercent - target) < 0.05) {
+        if (!sliderScaleSettled()) kickSliderFrame();
+        return;
+      }
+      sliderFrom = sliderPercent;
+      sliderTo = target;
+      sliderStart = performance.now();
+      sliderDur = dur;
+      sliderPlaying = Math.abs(sliderTo - sliderFrom) >= 0.05;
+      if (!sliderPlaying) sliderPercent = target;
+      kickSliderFrame();
+    }
+
+    function jumpSliderVisual() {
+      if (sliderFrame) cancelAnimationFrame(sliderFrame);
+      sliderFrame = 0;
+      sliderLastTs = 0;
+      sliderPlaying = false;
+      sliderPercent = sliderTargetPercent();
+      sliderScale = 1;
+      sliderScaleV = 0;
+      effortWasMax = sliderEffortItems()[sliderIndex()]?.id === "ultra";
+      stopGlow();
+      stopWander();
+      paintSlider();
+    }
+
+    const BURST_DOTS = [
+      [-3, -34, 0], [15, -29, 8], [30, -19, 0], [34, -2, 12], [26, 20, 0], [12, 31, 10], [-6, 34, 0], [-22, 26, 14],
+      [-32, 9, 0], [-32, -10, 8], [-21, -26, 0], [7, -24, 6], [24, -9, 0], [20, 10, 10], [-9, 21, 0], [-25, -5, 12],
+    ];
+    const GLOW_VERT = "attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*0.5+0.5;gl_Position=vec4(aPosition,0.0,1.0);}";
+    const GLOW_FRAG = "precision highp float;\n\n  varying vec2 vUv;\n\n  uniform float uTime;\n  uniform vec2 uResolution;\n\n  const vec3 COLOR_1 = vec3(0.592, 0.388, 0.945);\n  const vec3 COLOR_2 = vec3(0.831, 0.710, 0.953);\n  const vec3 COLOR_3 = vec3(0.286, 0.000, 0.404);\n  const vec3 COLOR_4 = vec3(0.145, 0.055, 0.478);\n  const vec3 COLOR_5 = vec3(0.592, 0.000, 0.996);\n  const vec3 COLOR_6 = vec3(0.780, 0.459, 0.914);\n  const vec3 COLOR_7 = vec3(0.725, 0.576, 1.000);\n  const vec3 COLOR_8 = vec3(0.400, 0.212, 0.820);\n  const vec3 COLOR_9 = vec3(0.882, 0.690, 1.000);\n  const vec3 COLOR_10 = vec3(0.498, 0.345, 0.957);\n  const vec3 COLOR_11 = vec3(0.659, 0.275, 0.910);\n  const vec3 COLOR_12 = vec3(0.212, 0.063, 0.400);\n\n  float grain(vec2 uv) {\n    vec2 grainUv = uv * uResolution * 0.5;\n    return fract(sin(dot(grainUv + uTime, vec2(12.9898, 78.233))) * 43758.5453) * 2.0 - 1.0;\n  }\n\n  float fieldWeight(vec2 point, vec2 center) {\n    return exp(-dot(point - center, point - center) * 12.0);\n  }\n\n  vec3 fieldColor(vec2 rawUv) {\n    const float speed = 1.25;\n    vec2 uv = vec2(rawUv.x, 0.40 + rawUv.y * 0.18);\n    vec2 spatialScale = vec2(1.55, 1.0);\n    vec2 point = uv * spatialScale;\n    vec2 center1 = vec2(0.18 + sin(uTime * speed * 0.42) * 0.18, 0.36 + cos(uTime * speed * 0.50) * 0.42) * spatialScale;\n    vec2 center2 = vec2(0.34 + cos(uTime * speed * 0.62) * 0.24, 0.62 + sin(uTime * speed * 0.47) * 0.38) * spatialScale;\n    vec2 center3 = vec2(0.52 + sin(uTime * speed * 0.38) * 0.28, 0.30 + cos(uTime * speed * 0.58) * 0.36) * spatialScale;\n    vec2 center4 = vec2(0.70 + cos(uTime * speed * 0.54) * 0.24, 0.68 + sin(uTime * speed * 0.41) * 0.36) * spatialScale;\n    vec2 center5 = vec2(0.88 + sin(uTime * speed * 0.74) * 0.16, 0.36 + cos(uTime * speed * 0.64) * 0.40) * spatialScale;\n    vec2 center6 = vec2(0.12 + cos(uTime * speed * 0.48) * 0.20, 0.72 + sin(uTime * speed * 0.70) * 0.30) * spatialScale;\n    vec2 center7 = vec2(0.30 + sin(uTime * speed * 0.58) * 0.22, 0.44 + cos(uTime * speed * 0.52) * 0.42) * spatialScale;\n    vec2 center8 = vec2(0.46 + cos(uTime * speed * 0.68) * 0.26, 0.72 + sin(uTime * speed * 0.56) * 0.32) * spatialScale;\n    vec2 center9 = vec2(0.60 + sin(uTime * speed * 0.44) * 0.28, 0.26 + cos(uTime * speed * 0.60) * 0.38) * spatialScale;\n    vec2 center10 = vec2(0.76 + cos(uTime * speed * 0.50) * 0.22, 0.54 + sin(uTime * speed * 0.66) * 0.40) * spatialScale;\n    vec2 center11 = vec2(0.92 + sin(uTime * speed * 0.70) * 0.15, 0.66 + cos(uTime * speed * 0.46) * 0.30) * spatialScale;\n    vec2 center12 = vec2(0.06 + cos(uTime * speed * 0.40) * 0.14, 0.32 + sin(uTime * speed * 0.60) * 0.40) * spatialScale;\n    float weight1 = fieldWeight(point, center1) * (0.7 + 0.3 * sin(uTime * 0.91));\n    float weight2 = fieldWeight(point, center2) * (0.7 + 0.3 * cos(uTime * 1.07));\n    float weight3 = fieldWeight(point, center3) * (0.7 + 0.3 * sin(uTime * 0.76));\n    float weight4 = fieldWeight(point, center4) * (0.7 + 0.3 * cos(uTime * 1.18));\n    float weight5 = fieldWeight(point, center5) * (0.7 + 0.3 * sin(uTime * 1.03));\n    float weight6 = fieldWeight(point, center6) * (0.7 + 0.3 * cos(uTime * 0.83));\n    float weight7 = fieldWeight(point, center7) * (0.7 + 0.3 * sin(uTime * 1.24));\n    float weight8 = fieldWeight(point, center8) * (0.7 + 0.3 * cos(uTime * 0.96));\n    float weight9 = fieldWeight(point, center9) * (0.7 + 0.3 * sin(uTime * 1.11));\n    float weight10 = fieldWeight(point, center10) * (0.7 + 0.3 * cos(uTime * 0.72));\n    float weight11 = fieldWeight(point, center11) * (0.7 + 0.3 * sin(uTime * 1.29));\n    float weight12 = fieldWeight(point, center12) * (0.7 + 0.3 * cos(uTime * 0.88));\n    float totalWeight = max(\n      weight1 + weight2 + weight3 + weight4 + weight5 + weight6 +\n        weight7 + weight8 + weight9 + weight10 + weight11 + weight12,\n      0.0001\n    );\n    vec3 color = (\n      COLOR_1 * weight1 + COLOR_2 * weight2 + COLOR_3 * weight3 +\n      COLOR_4 * weight4 + COLOR_5 * weight5 + COLOR_6 * weight6 +\n      COLOR_7 * weight7 + COLOR_8 * weight8 + COLOR_9 * weight9 +\n      COLOR_10 * weight10 + COLOR_11 * weight11 + COLOR_12 * weight12\n    ) / totalWeight;\n    color = mix(COLOR_4, color, 0.96);\n\n    return pow(clamp(color, vec3(0.0), vec3(1.0)), vec3(0.9));\n  }\n\n  void main() {\n    vec3 color = fieldColor(vUv);\n    color += grain(vUv) * 0.012;\n    color.r += sin(uTime * 0.5) * 0.02;\n    color.g += cos(uTime * 0.7) * 0.02;\n    color.b += sin(uTime * 0.6) * 0.02;\n    color = pow(color, vec3(0.92));\n\n    gl_FragColor = vec4(color, 1.0);\n  }\n";
+
+    function unitHash(index, salt) {
+      const n = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+      return n - Math.floor(n);
+    }
+
+    function stopGlow() {
+      if (glowStop) glowStop();
+      glowStop = null;
+      glowCanvas = null;
+    }
+
+    function stopWander() {
+      window.clearTimeout(wanderTimer);
+      wanderTimer = 0;
+    }
+
+    function startGlow(canvas) {
+      const gl = canvas.getContext("webgl", { alpha: true, antialias: false, depth: false, stencil: false });
+      if (!gl || !GLOW_FRAG) return () => {};
+      const compile = (type, source) => {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        return gl.getShaderParameter(shader, gl.COMPILE_STATUS) ? shader : null;
+      };
+      const vert = compile(gl.VERTEX_SHADER, GLOW_VERT);
+      const frag = compile(gl.FRAGMENT_SHADER, GLOW_FRAG);
+      if (!vert || !frag) return () => {};
+      const program = gl.createProgram();
+      gl.attachShader(program, vert);
+      gl.attachShader(program, frag);
+      gl.linkProgram(program);
+      gl.deleteShader(vert);
+      gl.deleteShader(frag);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return () => {};
+      const buffer = gl.createBuffer();
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+      const attrib = gl.getAttribLocation(program, "aPosition");
+      gl.enableVertexAttribArray(attrib);
+      gl.vertexAttribPointer(attrib, 2, gl.FLOAT, false, 0, 0);
+      const uTime = gl.getUniformLocation(program, "uTime");
+      const uResolution = gl.getUniformLocation(program, "uResolution");
+      const started = performance.now();
+      let frame = 0;
+      const draw = (now) => {
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(Math.round(rect.width), 1);
+        const height = Math.max(Math.round(rect.height), 1);
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const pixelsW = Math.round(width * ratio);
+        const pixelsH = Math.round(height * ratio);
+        if (canvas.width !== pixelsW || canvas.height !== pixelsH) {
+          canvas.width = pixelsW;
+          canvas.height = pixelsH;
+        }
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(uResolution, width, height);
+        gl.uniform1f(uTime, (now - started) / 1000);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        frame = window.requestAnimationFrame(draw);
+      };
+      frame = window.requestAnimationFrame(draw);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        gl.deleteBuffer(buffer);
+        gl.deleteProgram(program);
+      };
+    }
+
+    function mountFastParticles(host, startPercent) {
+      const period = 1.9;
+      const stagger = period / 14;
+      const remain = 1 - Math.min(Math.max(startPercent, 0), 100) / 100;
+      host.replaceChildren();
+      for (let i = 0; i < 14; i += 1) {
+        const speed = 1 + (unitHash(i, 21) - 0.5) * 0.4;
+        const duration = period / speed;
+        const path = document.createElement("span");
+        path.className = "cq-fast-path";
+        path.style.animationDelay = `${i * stagger - duration * remain}s`;
+        path.style.animationDuration = `${duration}s`;
+        path.style.top = `${12 + unitHash(i, 23) * 76}%`;
+        const dot = document.createElement("span");
+        dot.className = "cq-fast-dot";
+        dot.style.opacity = String(0.4 + unitHash(i, 11) * 0.6);
+        dot.style.transform = `translate(-50%, -50%) scale(${0.5 + unitHash(i, 12) * 0.45})`;
+        path.appendChild(dot);
+        host.appendChild(path);
+      }
+    }
+
+    function stepWander(host) {
+      const dots = [...host.querySelectorAll(".cq-wander-dot")];
+      if (!dots.length) {
+        for (let i = 0; i < 14; i += 1) {
+          const dot = document.createElement("span");
+          dot.className = "cq-wander-dot";
+          dot.style.opacity = String(0.4 + unitHash(i, 11) * 0.6);
+          dot.style.transform = `translate(-50%, -50%) scale(${0.5 + unitHash(i, 12) * 0.45})`;
+          host.appendChild(dot);
+          dots.push(dot);
+        }
+      }
+      let wait = 1600;
+      dots.forEach((dot) => {
+        const durationScale = 0.8 + Math.random() * 1.2;
+        const duration = 1.6 * durationScale;
+        wait = Math.max(wait, duration * 1000);
+        dot.style.transitionDuration = `${duration}s`;
+        dot.style.left = `calc(${Math.round(4 + Math.random() * 92)}% + ${Math.round((Math.random() - 0.5) * 8)}px)`;
+        dot.style.top = `${Math.round(12 + (Math.random() - 0.5) * 14)}px`;
+      });
+      wanderTimer = window.setTimeout(() => stepWander(host), wait);
+    }
+
+    function mountBurst(thumb) {
+      let host = thumb.querySelector("[data-cq-effort-burst]");
+      if (!host) {
+        host = document.createElement("span");
+        host.className = "cq-effort-burst";
+        host.dataset.cqEffortBurst = "";
+        thumb.appendChild(host);
+      }
+      host.replaceChildren();
+      BURST_DOTS.forEach(([x, y, delay]) => {
+        const dot = document.createElement("span");
+        dot.style.setProperty("--particle-x", `${x}px`);
+        dot.style.setProperty("--particle-y", `${y}px`);
+        if (delay) dot.style.animationDelay = `${delay}ms`;
+        host.appendChild(dot);
+      });
+    }
+
+    function syncEffortFeel() {
+      if (!pop) return;
+      const atMax = sliderEffortItems()[sliderIndex()]?.id === "ultra";
+      const reduced = effortMotionReduced();
+      const fast = state.moreUsage && !reduced;
+      const entered = atMax && !effortWasMax && !reduced;
+      effortWasMax = atMax;
+      const maxLayer = pop.querySelector("[data-cq-effort-max]");
+      const mask = pop.querySelector("[data-cq-effort-reveal]");
+      const canvas = pop.querySelector("[data-cq-effort-glow]");
+      const fastHost = pop.querySelector("[data-cq-effort-fast]");
+      const wander = pop.querySelector("[data-cq-effort-wander]");
+      const thumb = pop.querySelector("[data-cq-effort-thumb]");
+      if (maxLayer) maxLayer.classList.toggle("is-on", atMax);
+      if (mask) {
+        if (entered) {
+          mask.classList.remove("is-reveal");
+          void mask.offsetWidth;
+          mask.classList.add("is-reveal");
+        } else if (!atMax) mask.classList.remove("is-reveal");
+      }
+      if (canvas && atMax && !reduced) {
+        if (glowCanvas !== canvas) {
+          stopGlow();
+          glowCanvas = canvas;
+          glowStop = startGlow(canvas);
+        }
+      } else stopGlow();
+      if (wander) {
+        wander.hidden = !atMax || fast;
+        if (atMax && !fast && !wanderTimer) stepWander(wander);
+        if (!atMax || fast) stopWander();
+      }
+      if (fastHost) {
+        fastHost.hidden = !state.moreUsage;
+        fastHost.dataset.animationActive = fast ? "true" : "false";
+        if (state.moreUsage && !fastHost.childElementCount) mountFastParticles(fastHost, sliderPercent == null ? sliderTargetPercent() : sliderPercent);
+      }
+      if (entered && thumb) mountBurst(thumb);
+    }
 
     function effortMotionReduced() {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -647,13 +1013,15 @@ function mountCodexQueue(root) {
       const items = sliderEffortItems();
       const index = sliderIndex();
       const current = items[index] || { label: effortLabel() };
+      const openPercent = sliderPercent == null ? sliderTargetPercent() : sliderPercent;
+      const steps = Math.max(0, items.length - 1);
       const dots = items
         .map((item, i) => {
-          const p = items.length > 1 ? i / (items.length - 1) : 0;
-          return `<span class="cq-effort-dot${i <= index ? " is-on" : ""}${i === index ? " is-now" : ""}" style="left:calc(${p} * (100% - 28px) + 14px)" data-cq-effort-dot="${i}"></span>`;
+          const percent = steps > 0 ? (i / steps) * 100 : 0;
+          return `<span class="cq-effort-dot${i <= index ? " is-on" : ""}${i === index ? " is-now" : ""}" style="left:${sliderThumbLeft(percent)}" data-cq-effort-dot="${i}"></span>`;
         })
         .join("");
-      return `<div class="cq-effort" data-cq-effort-view="effort" style="--cq-effort-pct:${effortPct()}">
+      return `<div class="cq-effort" data-cq-effort-view="effort">
         <div class="cq-effort-top">
           <button type="button" class="cq-effort-icon${state.moreUsage ? " is-on" : ""}" role="menuitemcheckbox" data-cq-pop-action="moreUsage" aria-label="启用标准模式" aria-checked="${state.moreUsage ? "true" : "false"}">
             <svg class="cq-effort-bolt" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.9125 21.4125C11.5292 21.8625 11.0292 22.0958 10.4125 22.1125C9.79586 22.1291 9.29586 21.9208 8.91252 21.4875C8.53752 21.0541 8.45836 20.4541 8.67503 19.6875L9.68752 16H4.57502C4.00836 16 3.56669 15.8375 3.25002 15.5125C2.93336 15.1791 2.77502 14.7791 2.77502 14.3125C2.77502 13.8375 2.92919 13.4125 3.23752 13.0375L12.1375 2.47497C12.5209 2.02497 13.0209 1.79164 13.6375 1.77497C14.2542 1.75831 14.75 1.96664 15.125 2.39997C15.5084 2.83331 15.5917 3.43331 15.375 4.19997L14.3125 7.99998H19.425C19.9917 7.99998 20.4334 8.16664 20.75 8.49997C21.075 8.83331 21.2375 9.23748 21.2375 9.71247C21.2375 10.1791 21.0792 10.5958 20.7625 10.9625L11.9125 21.4125Z"/></svg>
@@ -672,10 +1040,16 @@ function mountCodexQueue(root) {
           <span class="cq-sr">使用左右方向键调整强度</span>
           <div class="cq-effort-slider" role="menuitem" aria-label="强度" data-cq-effort-slider>
             <div class="cq-effort-track">
-              <div class="cq-effort-range" data-cq-effort-range></div>
+              <div class="cq-effort-range" data-cq-effort-range style="transform:${sliderRangeTransform(openPercent, steps)}">
+                <div class="cq-effort-max" data-cq-effort-max>
+                  <div class="cq-effort-max-mask" data-cq-effort-reveal><canvas class="cq-effort-glow" data-cq-effort-glow></canvas></div>
+                  <div class="cq-effort-wander" data-cq-effort-wander hidden></div>
+                </div>
+                <div class="cq-effort-fast" data-cq-effort-fast hidden></div>
+              </div>
               ${dots}
-              <span class="cq-effort-thumb" role="slider" tabindex="0" data-cq-effort-thumb aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="${items.length - 1}" aria-valuenow="${index}" aria-valuetext="${escapeHtml(current.label)}"></span>
             </div>
+            <span class="cq-effort-thumb" role="slider" tabindex="0" data-cq-effort-thumb aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="${items.length - 1}" aria-valuenow="${index}" aria-valuetext="${escapeHtml(current.label)}" style="left:${sliderThumbLeft(openPercent)};transform:translate(-50%, -50%) scale(${sliderScale})"><span class="cq-effort-burst" data-cq-effort-burst></span></span>
           </div>
         </div>
       </div>`;
@@ -695,17 +1069,17 @@ function mountCodexQueue(root) {
     }
 
     function setEffortFromClientX(hit, clientX) {
-      const box = hit.getBoundingClientRect();
-      const t = (clientX - box.left - 14) / Math.max(1, box.width - 28);
-      setSliderIndex(Math.round(Math.max(0, Math.min(1, t)) * (sliderEffortItems().length - 1)));
+      const box = sliderRect || hit.getBoundingClientRect();
+      const steps = sliderSteps();
+      if (steps <= 0 || box.width <= 0) return;
+      const raw = ((clientX - box.left) / box.width) * steps;
+      setSliderIndex(Math.round(Math.min(steps, Math.max(0, raw))));
     }
 
     function patchEffortSlider() {
       const items = sliderEffortItems();
       const index = sliderIndex();
       const label = items[index]?.label || effortLabel();
-      const panel = pop.querySelector("[data-cq-effort-view=effort]");
-      if (panel) panel.style.setProperty("--cq-effort-pct", String(effortPct()));
       const thumb = pop.querySelector("[data-cq-effort-thumb]");
       if (thumb) {
         thumb.setAttribute("aria-valuenow", String(index));
@@ -719,6 +1093,8 @@ function mountCodexQueue(root) {
         dot.classList.toggle("is-on", i <= index);
         dot.classList.toggle("is-now", i === index);
       });
+      animateSliderTo(sliderTargetPercent(), sliderPointerMoved);
+      syncEffortFeel();
     }
 
     function modelLabel() {
@@ -830,6 +1206,7 @@ function mountCodexQueue(root) {
             more.setAttribute("aria-checked", state.moreUsage ? "true" : "false");
           }
           updateComposerChrome();
+          syncEffortFeel();
           return;
         }
         case "modelPack":
@@ -853,6 +1230,8 @@ function mountCodexQueue(root) {
         if (kind === "model") {
           pop.dataset.view = state.modelView;
           syncEffortStacks(true);
+          if (state.modelView === "effort") syncEffortFeel();
+          else stopGlow();
         }
         if (trigger) {
           placeOverlay(
@@ -1444,24 +1823,51 @@ function mountCodexQueue(root) {
     if (pop) {
       pop.addEventListener("pointerdown", (event) => {
         const hit = event.target.closest("[data-cq-effort-slider]");
-        if (!hit) return;
+        if (!hit || event.button !== 0) return;
         event.preventDefault();
         sliderDrag = hit;
-        hit.setPointerCapture(event.pointerId);
-        hit.classList.add("is-drag");
-        setEffortFromClientX(hit, event.clientX);
+        sliderRect = hit.getBoundingClientRect();
+        sliderPointerMoved = false;
+        try {
+          hit.setPointerCapture(event.pointerId);
+        } catch (error) {
+          void error;
+        }
+        kickSliderFrame();
+        if (!event.target.closest("[data-cq-effort-thumb]")) setEffortFromClientX(hit, event.clientX);
       });
       pop.addEventListener("pointermove", (event) => {
         if (!sliderDrag) return;
+        if (!sliderPointerMoved) {
+          sliderPointerMoved = true;
+          sliderDrag.classList.add("is-drag");
+        }
         setEffortFromClientX(sliderDrag, event.clientX);
       });
-      pop.addEventListener("pointerup", () => {
+      const endSliderPointer = () => {
+        const moved = sliderPointerMoved;
         sliderDrag?.classList.remove("is-drag");
         sliderDrag = null;
+        sliderRect = null;
+        sliderPointerMoved = false;
+        if (moved) animateSliderTo(sliderTargetPercent(), false);
+        else kickSliderFrame();
+      };
+      pop.addEventListener("pointerup", endSliderPointer);
+      pop.addEventListener("pointercancel", endSliderPointer);
+      pop.addEventListener("lostpointercapture", (event) => {
+        if (event.target.closest("[data-cq-effort-slider]")) endSliderPointer();
       });
-      pop.addEventListener("pointercancel", () => {
-        sliderDrag?.classList.remove("is-drag");
-        sliderDrag = null;
+      pop.addEventListener("pointerover", (event) => {
+        if (!event.target.closest("[data-cq-effort-thumb]") || sliderThumbHover) return;
+        sliderThumbHover = true;
+        kickSliderFrame();
+      });
+      pop.addEventListener("pointerout", (event) => {
+        const thumb = event.target.closest("[data-cq-effort-thumb]");
+        if (!thumb || (event.relatedTarget && thumb.contains(event.relatedTarget))) return;
+        sliderThumbHover = false;
+        kickSliderFrame();
       });
       pop.addEventListener(
         "keydown",
@@ -1833,9 +2239,7 @@ function mountCodexQueue(root) {
   }
 
   bind(root);
-
 }
-
 export function CodexQueue() {
   const rootRef = useRef(null);
 
