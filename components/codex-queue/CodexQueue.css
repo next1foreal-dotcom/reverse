@@ -1233,7 +1233,7 @@
 
 @keyframes cq-effort-burst {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.25); }
-  22% { opacity: 1; transform: translate(-50%, -50%) scale(1.28); }
+  22% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(calc(-50% + var(--particle-x)), calc(-50% + var(--particle-y))) scale(0.55); }
 }
 

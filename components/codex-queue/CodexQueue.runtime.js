@@ -551,46 +551,23 @@
     const EFFORT_MOTION_MS = 300;
     const SLIDER_THUMB_PX = 28;
     const SLIDER_EDGE_PX = 1;
-    const SLIDER_DRAG_MS = 150;
-    const SLIDER_REST_MS = 300;
     let sliderDrag = null;
     let sliderRect = null;
     let sliderPointerMoved = false;
-    let sliderThumbHover = false;
+    let sliderGrab = 0;
     let sliderPercent = null;
     let sliderFrom = 0;
     let sliderTo = 0;
-    let sliderStart = 0;
-    let sliderDur = SLIDER_REST_MS;
+    let sliderLast = 0;
+    let sliderElapsed = 0;
+    let sliderDur = 260;
     let sliderPlaying = false;
-    let sliderScale = 1;
-    let sliderScaleV = 0;
     let sliderFrame = 0;
-    let sliderLastTs = 0;
+    let sliderScale = 1;
     let effortWasMax = false;
     let glowStop = null;
     let glowCanvas = null;
     let wanderTimer = 0;
-
-    function sliderEase(x) {
-      if (x <= 0) return 0;
-      if (x >= 1) return 1;
-      const x1 = 0.23;
-      const y1 = 1;
-      const x2 = 0.32;
-      const y2 = 1;
-      const cx = (t) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
-      const cy = (t) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
-      const dx = (t) => 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
-      let t = x;
-      for (let i = 0; i < 8; i += 1) {
-        const err = cx(t) - x;
-        const slope = dx(t);
-        if (Math.abs(err) < 1e-5 || Math.abs(slope) < 1e-6) break;
-        t -= err / slope;
-      }
-      return cy(Math.min(1, Math.max(0, t)));
-    }
 
     function sliderSteps() {
       return Math.max(0, sliderEffortItems().length - 1);
@@ -601,9 +578,33 @@
       return (steps <= 0 ? 0 : sliderIndex() / steps) * 100;
     }
 
+    function sliderThumbInset() {
+      return SLIDER_THUMB_PX / 2 - SLIDER_EDGE_PX;
+    }
+
     function sliderThumbOffset(percent) {
-      const inset = SLIDER_THUMB_PX / 2 - SLIDER_EDGE_PX;
+      const inset = sliderThumbInset();
       return inset - (percent / 50) * inset;
+    }
+
+    function sliderThumbCenter(box, percent) {
+      const inset = sliderThumbInset();
+      const travel = Math.max(box.width - inset * 2, 1);
+      const clamped = Math.min(100, Math.max(0, percent));
+      return box.left + inset + (clamped / 100) * travel;
+    }
+
+    function sliderPercentFromClientX(box, clientX, grab) {
+      const inset = sliderThumbInset();
+      const travel = Math.max(box.width - inset * 2, 1);
+      const local = clientX - (grab || 0) - box.left - inset;
+      return Math.min(100, Math.max(0, (local / travel) * 100));
+    }
+
+    function sliderIndexFromPercent(percent) {
+      const steps = sliderSteps();
+      if (steps <= 0) return 0;
+      return Math.round(Math.min(steps, Math.max(0, (percent / 100) * steps)));
     }
 
     function sliderRangeShift(percent, steps) {
@@ -629,99 +630,82 @@
       const range = pop.querySelector("[data-cq-effort-range]");
       if (thumb) {
         thumb.style.left = sliderThumbLeft(sliderPercent);
-        thumb.style.transform = `translate(-50%, -50%) scale(${sliderScale})`;
+        thumb.style.transform = "translate(-50%, -50%)";
       }
       if (range) range.style.transform = sliderRangeTransform(sliderPercent, steps);
     }
 
-    function sliderPressed() {
-      return sliderDrag != null || sliderThumbHover;
+    function stopSliderSettle() {
+      if (sliderFrame) cancelAnimationFrame(sliderFrame);
+      sliderFrame = 0;
+      sliderPlaying = false;
     }
 
-    function sliderScaleSettled() {
-      const target = effortMotionReduced() || !sliderPressed() ? 1 : 32 / 28;
-      return Math.abs(sliderScale - target) < 0.0008 && Math.abs(sliderScaleV) < 0.001;
+    function sliderSoftEase(u) {
+      const t = Math.min(1, Math.max(0, u));
+      return t * t * t * (t * (t * 6 - 15) + 10);
     }
 
-    function stepSliderScale(dt) {
-      const pressed = sliderPressed();
-      const target = effortMotionReduced() || !pressed ? 1 : 32 / 28;
-      if (effortMotionReduced()) {
-        sliderScale = target;
-        sliderScaleV = 0;
-        return;
-      }
-      const cfg = pressed ? { k: 420, c: 38 } : { k: 220, c: 26 };
-      const count = Math.max(1, Math.ceil(dt / (1 / 120)));
-      const h = dt / count;
-      for (let i = 0; i < count; i += 1) {
-        const accel = -cfg.k * (sliderScale - target) - cfg.c * sliderScaleV;
-        sliderScaleV += accel * h;
-        sliderScale += sliderScaleV * h;
-      }
-    }
-
-    function sliderFrameStep(now) {
-      const dt = Math.min(0.05, sliderLastTs ? (now - sliderLastTs) / 1000 : 1 / 60);
-      sliderLastTs = now;
-      if (sliderPlaying) {
-        const u = Math.min(1, (now - sliderStart) / sliderDur);
-        sliderPercent = sliderFrom + (sliderTo - sliderFrom) * sliderEase(u);
-        if (u >= 1) {
-          sliderPercent = sliderTo;
-          sliderPlaying = false;
-        }
-      }
-      stepSliderScale(dt);
-      paintSlider();
-      if (sliderPlaying || !sliderScaleSettled()) sliderFrame = requestAnimationFrame(sliderFrameStep);
-      else {
-        sliderFrame = 0;
-        sliderLastTs = 0;
-      }
-    }
-
-    function kickSliderFrame() {
-      if (sliderFrame) return;
-      sliderLastTs = 0;
-      sliderFrame = requestAnimationFrame(sliderFrameStep);
-    }
-
-    function animateSliderTo(target, dragging) {
-      const dur = dragging ? SLIDER_DRAG_MS : SLIDER_REST_MS;
-      if (sliderPercent == null || effortMotionReduced()) {
-        sliderPercent = target;
+    function sliderSettleFrame(now) {
+      if (!sliderPlaying || (sliderDrag != null && sliderPointerMoved)) {
         sliderPlaying = false;
-        if (effortMotionReduced()) {
-          sliderScale = 1;
-          sliderScaleV = 0;
-        }
-        paintSlider();
-        if (!sliderScaleSettled()) kickSliderFrame();
+        sliderFrame = 0;
         return;
       }
-      if (sliderPlaying && sliderTo === target && sliderDur === dur) return;
-      if (!sliderPlaying && Math.abs(sliderPercent - target) < 0.05) {
-        if (!sliderScaleSettled()) kickSliderFrame();
+      const dt = Math.min(34, Math.max(0, now - sliderLast));
+      sliderLast = now;
+      sliderElapsed += dt;
+      const u = Math.min(1, sliderElapsed / sliderDur);
+      sliderPercent = sliderFrom + (sliderTo - sliderFrom) * sliderSoftEase(u);
+      if (u >= 1) {
+        sliderPercent = sliderTo;
+        sliderPlaying = false;
+      }
+      paintSlider();
+      if (sliderPlaying) sliderFrame = requestAnimationFrame(sliderSettleFrame);
+      else sliderFrame = 0;
+    }
+
+    function animateSliderTo(target) {
+      if (sliderDrag != null && sliderPointerMoved) return;
+      if (sliderPercent == null || effortMotionReduced()) {
+        stopSliderSettle();
+        sliderPercent = target;
+        paintSlider();
+        return;
+      }
+      if (sliderPlaying && sliderTo === target) return;
+      const distance = Math.abs(sliderPercent - target);
+      if (distance < 0.35) {
+        stopSliderSettle();
+        sliderPercent = target;
+        paintSlider();
         return;
       }
       sliderFrom = sliderPercent;
       sliderTo = target;
-      sliderStart = performance.now();
-      sliderDur = dur;
-      sliderPlaying = Math.abs(sliderTo - sliderFrom) >= 0.05;
-      if (!sliderPlaying) sliderPercent = target;
-      kickSliderFrame();
+      sliderLast = performance.now();
+      sliderElapsed = 0;
+      sliderDur = Math.min(320, Math.max(200, 160 + distance * 10));
+      sliderPlaying = true;
+      if (sliderFrame) cancelAnimationFrame(sliderFrame);
+      sliderFrame = requestAnimationFrame(sliderSettleFrame);
+    }
+
+    function placeSliderFromPointer(clientX) {
+      const box = sliderRect;
+      if (!box || box.width <= 0) return;
+      stopSliderSettle();
+      sliderPercent = sliderPercentFromClientX(box, clientX, sliderGrab);
+      paintSlider();
+      const next = sliderIndexFromPercent(sliderPercent);
+      if (next !== sliderIndex()) setSliderIndex(next);
     }
 
     function jumpSliderVisual() {
-      if (sliderFrame) cancelAnimationFrame(sliderFrame);
-      sliderFrame = 0;
-      sliderLastTs = 0;
-      sliderPlaying = false;
+      stopSliderSettle();
       sliderPercent = sliderTargetPercent();
       sliderScale = 1;
-      sliderScaleV = 0;
       effortWasMax = sliderEffortItems()[sliderIndex()]?.id === "ultra";
       stopGlow();
       stopWander();
@@ -1065,10 +1049,8 @@
 
     function setEffortFromClientX(hit, clientX) {
       const box = sliderRect || hit.getBoundingClientRect();
-      const steps = sliderSteps();
-      if (steps <= 0 || box.width <= 0) return;
-      const raw = ((clientX - box.left) / box.width) * steps;
-      setSliderIndex(Math.round(Math.min(steps, Math.max(0, raw))));
+      if (box.width <= 0) return;
+      setSliderIndex(sliderIndexFromPercent(sliderPercentFromClientX(box, clientX, 0)));
     }
 
     function patchEffortSlider() {
@@ -1088,7 +1070,7 @@
         dot.classList.toggle("is-on", i <= index);
         dot.classList.toggle("is-now", i === index);
       });
-      animateSliderTo(sliderTargetPercent(), sliderPointerMoved);
+      animateSliderTo(sliderTargetPercent());
       syncEffortFeel();
     }
 
@@ -1823,13 +1805,15 @@
         sliderDrag = hit;
         sliderRect = hit.getBoundingClientRect();
         sliderPointerMoved = false;
+        const thumb = event.target.closest("[data-cq-effort-thumb]");
+        const percent = sliderPercent == null ? sliderTargetPercent() : sliderPercent;
+        sliderGrab = thumb ? event.clientX - sliderThumbCenter(sliderRect, percent) : 0;
         try {
           hit.setPointerCapture(event.pointerId);
         } catch (error) {
           void error;
         }
-        kickSliderFrame();
-        if (!event.target.closest("[data-cq-effort-thumb]")) setEffortFromClientX(hit, event.clientX);
+        if (!thumb) setEffortFromClientX(hit, event.clientX);
       });
       pop.addEventListener("pointermove", (event) => {
         if (!sliderDrag) return;
@@ -1837,32 +1821,20 @@
           sliderPointerMoved = true;
           sliderDrag.classList.add("is-drag");
         }
-        setEffortFromClientX(sliderDrag, event.clientX);
+        placeSliderFromPointer(event.clientX);
       });
       const endSliderPointer = () => {
-        const moved = sliderPointerMoved;
         sliderDrag?.classList.remove("is-drag");
         sliderDrag = null;
         sliderRect = null;
         sliderPointerMoved = false;
-        if (moved) animateSliderTo(sliderTargetPercent(), false);
-        else kickSliderFrame();
+        sliderGrab = 0;
+        animateSliderTo(sliderTargetPercent());
       };
       pop.addEventListener("pointerup", endSliderPointer);
       pop.addEventListener("pointercancel", endSliderPointer);
       pop.addEventListener("lostpointercapture", (event) => {
         if (event.target.closest("[data-cq-effort-slider]")) endSliderPointer();
-      });
-      pop.addEventListener("pointerover", (event) => {
-        if (!event.target.closest("[data-cq-effort-thumb]") || sliderThumbHover) return;
-        sliderThumbHover = true;
-        kickSliderFrame();
-      });
-      pop.addEventListener("pointerout", (event) => {
-        const thumb = event.target.closest("[data-cq-effort-thumb]");
-        if (!thumb || (event.relatedTarget && thumb.contains(event.relatedTarget))) return;
-        sliderThumbHover = false;
-        kickSliderFrame();
       });
       pop.addEventListener(
         "keydown",
